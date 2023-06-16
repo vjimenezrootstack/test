@@ -1,0 +1,34 @@
+stages: 
+  - deploy-pantheon
+
+deploy:pantheon:
+  image: subhaze/terminus
+  stage: deploy-pantheon
+  variables:
+     GIT_CLEAN_FLAGS: none
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$ROOTSTACK_DEV_SSH_KEY" | tr -d '\r' | ssh-add - > /dev/null
+    - mkdir -p $HOME/.ssh && echo "StrictHostKeyChecking no" >> "$HOME/.ssh/config"
+    - git config --global user.email "$GITLAB_USER_EMAIL"
+    - git config --global user.name "Gitlab CI"
+  environment: 
+    name: dev
+    url: https://dev-$PANTHEON_GIT_URL.pantheonsite.io/
+  script:
+    - cp .gitignore.pantheon .gitignore
+    - cp web/sites/default/settings.local.pantheon.php web/sites/default/settings.php
+    - git remote remove pantheon
+    - find ./web -type d -name ".git" | xargs rm -fr
+    - git add .
+    - commit_message=$(git log -1 --pretty=%B)
+    - git config user.name "$(git --no-pager log --format=format:'%an' -n 1)"
+    - git config user.email "$(git --no-pager log --format=format:'%ae' -n 1)"
+    - git commit -m "Build pantheon artifact."
+    - git remote add pantheon $PANTHEON_GIT_URL
+    - git push pantheon HEAD:master --force
+    - terminus auth:login --email=$PANTHEON_EMAIL_TERMINUS --machine-token=$PANTHEON_MACHINE_TOKEN
+    - terminus drush $PANTHEON_SITE.$ENV_DEV -- cim -y 
+    - terminus drush $PANTHEON_SITE.$ENV_DEV cr
+  only: 
+    - master
